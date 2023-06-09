@@ -9,6 +9,7 @@ import argparse
 import shutil
 from natsort import natsorted
 from PIL import ImageFont, ImageDraw, Image
+import math
 
 parser = argparse.ArgumentParser(description='Create clips of events using recordings from the hit game CrossCode') # noqa
 parser.add_argument('-t', '--type',         type=str,    required=True, choices=["ko", "death"],    help='Type of event to search for') # noqa
@@ -22,6 +23,7 @@ parser.add_argument('--no-delete-clips',    action='store_false', default=True, 
 parser.add_argument('--no-generate-clips',  action='store_false', default=True,                     help='Skip clip generation (use already existing ones)') # noqa
 parser.add_argument('--no-tile',            action='store_false', default=True,                     help='Skip tile video generation (use already exisiting ones)') # noqa
 parser.add_argument('--intro-duration',     type=float, default=2,                                  help='Duration of the intro. 0 to disable (default: 2)') # noqa
+parser.add_argument('--progess-graph',      action='store_true', default=False,                     help='Generate boss progress graph (bosses only)') # noqa
 
 args = parser.parse_args()
 search_type = args.type
@@ -35,6 +37,7 @@ gen_video_after = args.after
 do_tile = args.no_tile
 grid_size = args.grid
 intro_duration = args.intro_duration
+progress_graph = args.progess_graph
 
 
 if not out_filepath.endswith(".mkv"):
@@ -72,6 +75,7 @@ for x in range(len(template_cuts)):
 frame_match_array_lock = threading.Lock()
 frame_count_lock = threading.Lock()
 frame_lock = threading.Lock()
+graph_data_lock = threading.Lock()
 
 work_dir = os.getcwd()
 clips_dir = f"{work_dir}/clips"
@@ -94,7 +98,7 @@ total_clips = 0
 
 def process_file(video):
     print(f"Processing file {video}")
-    global cap, video_frame_count, video_fps, video_width, video_height, start_frame, end_frame, total_videos_length # noqa
+    global cap, video_frame_count, video_fps, video_width, video_height, start_frame, end_frame, total_videos_length, graph_data, phase_count # noqa
     # Load the video file
     cap = cv2.VideoCapture(video)
     video_frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -106,6 +110,9 @@ def process_file(video):
 
     start_frame = 0
     end_frame = -1
+
+    graph_data = []
+    phase_count = None
 
     if video == "/mnt/nvme/2023-05-10_15-31-44.mkv":
         beg_frames = [4921, 6100, 10669, 15979, 20048, 21119, 22439, 23485, 24557, 26353, 26987, 30177, 33496, 35333, 38442, 40647, 44236, 44852, 48533, 51639, 53523, 57545, 62014, 65637, 69571, 73528, 76983, 81729, 85428, 89044, 93895, 94901, 102191, 105385, 108995, 119393] # noqa
@@ -119,16 +126,19 @@ def process_file(video):
         search_for_frames()
         beg_frames = get_unique_moments(frames_with_matches)
 
+    if progress_graph:
+        get_boss_health_data(beg_frames)
+
     # for value in frames_with_matches:
     #     if value > 20000 and value < 23000:
     #         print(value, end=' ')
     # print()
 
-    # for frame in range(57500, 62020):
-    #     cap.set(cv2.CAP_PROP_POS_FRAMES, frame)
-    #     ret, img = cap.read()
-    #     print(frame)
-    #     show_image(img, 1)
+    # cap.set(cv2.CAP_PROP_POS_FRAMES, 50000)
+    # ret, img = cap.read()
+    # show_image(img, 0)
+
+    exit()
 
     # for frame in beg_frames:
     #     cap.set(cv2.CAP_PROP_POS_FRAMES, frame)
@@ -183,6 +193,63 @@ def check_frame_with_template(frame_number, frame, cut_index):
     return False
 
 
+def is_color_simillar(color1, color2, threshold):
+    r1, g1, b1 = color1
+    b2, g2, r2 = color2
+    diff = math.sqrt((r1 - r2)**2 + (g1 - g2)**2 + (b1 - b2)**2)
+    # print(color1, color2, diff)
+    return diff < threshold
+
+
+def get_boss_health_data(beg_frames):
+    print("Getting boss health from unique moments")
+    for frame_number in tqdm(beg_frames, unit=' frames'):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+        ret, img = cap.read()
+        if not ret:
+            continue
+
+        health = (216, 29, 56)
+        phase_start = (230, 150, 163)
+        empty = (76, 76, 76)
+
+        starting_x = 143
+        x = starting_x
+        y = 1046
+        total_bar_length = 1829 - starting_x
+
+        global phase_count
+        if not phase_count:
+            set_boss_phases = True
+
+        is_phase = False
+
+        while True:
+            x += 1
+            color = img[y, x]
+            if is_color_simillar(color, health, threshold=8):
+                is_phase = False
+            elif is_color_simillar(color, empty, threshold=5):
+                is_phase = False
+            elif is_color_simillar(color, phase_start, threshold=5):
+                if set_boss_phases:
+                    phase_count = round(total_bar_length / (x - starting_x + 5)) # noqa
+
+                is_phase = True
+            else:
+                if is_phase:
+                    continue
+                # img[y, x] = (255, 0, 0)
+                # show_image(img, 0)
+                precentage = (x - starting_x + 5) / total_bar_length * 100
+                break
+
+        with graph_data_lock:
+            graph_data.append((frame_number, precentage))
+
+    # print(f"Boss phases: {phase_count}")
+
+
 def add_frame_to_array(frame_number, frame, locations):
     with frame_match_array_lock:
         frames_with_matches.append(frame_number)
@@ -232,8 +299,6 @@ def search_for_frames():
     pbar.close()
 
     frames_with_matches.sort()
-    print(frames_with_matches)
-    exit()
 
     print(f"\nFound {len(frames_with_matches)} frames with matches\n")
     # print(frames_with_matches)

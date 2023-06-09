@@ -8,6 +8,7 @@ import os
 import argparse
 import shutil
 from natsort import natsorted
+from PIL import ImageFont, ImageDraw, Image
 
 parser = argparse.ArgumentParser(description='Create clips of events using recordings from the hit game CrossCode') # noqa
 parser.add_argument('-t', '--type',         type=str,    required=True, choices=["ko", "death"],    help='Type of event to search for') # noqa
@@ -17,26 +18,37 @@ parser.add_argument('-A', '--after',        type=int, default=150,              
 parser.add_argument('-B', '--before',       type=int, default=500,                                  help='Clip time before event in ms (default: 150)') # noqa
 parser.add_argument('--grid',               type=int, default=1,                                    help='Grid size') # noqa
 parser.add_argument('--threads',            type=int, default=4,                                    help='Clip time after event in ms (default: 500)') # noqa
-parser.add_argument('--no-recode',          action='store_false', default=True,                     help='Dont recode the final video (results in bigger file)') # noqa
 parser.add_argument('--no-delete-clips',    action='store_false', default=True,                     help='Dont delete the clips at the end') # noqa
-parser.add_argument('--no-generate-clips',  action='store_false', default=True,                     help='Dont generate clips (use already existing ones)') # noqa
-
+parser.add_argument('--no-generate-clips',  action='store_false', default=True,                     help='Skip clip generation (use already existing ones)') # noqa
+parser.add_argument('--no-tile',            action='store_false', default=True,                     help='Skip tile video generation (use already exisiting ones)') # noqa
+parser.add_argument('--intro-duration',     type=float, default=2,                                  help='Duration of the intro. 0 to disable (default: 2)') # noqa
 
 args = parser.parse_args()
 search_type = args.type
 files = args.files
 thread_count = args.threads
-out_filename = args.output
+out_filepath = args.output
 cleanup_clips = args.no_delete_clips
-recode_video = args.no_recode
 do_generate_clips = args.no_generate_clips
 gen_video_before = args.before
 gen_video_after = args.after
+do_tile = args.no_tile
 grid_size = args.grid
+intro_duration = args.intro_duration
+
+
+if not out_filepath.endswith(".mkv"):
+    print("Output file has to end with .mkv")
+    exit()
+else:
+    out_filename = os.path.basename(out_filepath)
+    out_basename = out_filename[:-4]
 
 
 for i in range(len(files)):
     files[i] = files[i].name
+    if not files[i].endswith(".mkv"):
+        print("Only .mkv files are accepted.")
 
 if search_type == "ko":
     _template = cv2.imread("ko.png", cv2.IMREAD_GRAYSCALE)
@@ -77,6 +89,7 @@ if not os.path.exists(temp_dir):
 max_frame_jump = 100
 
 total_videos_length = 0
+total_clips = 0
 
 
 def process_file(video):
@@ -243,12 +256,26 @@ def get_unique_moments(frames):
     return beg_frames
 
 
+def ffmpeg_combine(arr, filename, copy=True):
+    list_file_path = f"{temp_dir}/list.txt"
+    list_file = open(list_file_path, 'w')
+    for f in arr:
+        list_file.write(f"file {f}\n")
+    list_file.close()
+
+    copy_flag = ""
+    if copy:
+        copy_flag = "-c copy"
+    cmd = f"ffmpeg -f concat -safe 0 -i {list_file_path} {copy_flag} -loglevel error -fflags +genpts -y {filename}" # noqa
+    os.system(cmd)
+    os.remove(list_file_path)
+
+
 def generate_clips(beg_frames, video):
     print("Generating clips")
 
     global pbar
     pbar = tqdm(total=len(beg_frames), unit='clip')
-
     with concurrent.futures.ThreadPoolExecutor(max_workers=thread_count) as executor: # noqa
         futures = [executor.submit(generate_video_of_frame, video, frame_number) for frame_number in beg_frames] # noqa
 
@@ -259,14 +286,13 @@ def generate_clips(beg_frames, video):
 
 
 def generate_video_of_frame(video, frame_number):
-    filename = f"{file_index}_{frame_number}.mp4"
+    filename = f"{file_index}_{frame_number}.mkv"
+
     video_file = f"{temp_dir}/video-{filename}"
     audio_file = f"{temp_dir}/audio-{filename}"
 
-    # Extract video
     start_frame = frame_number - int(gen_video_before*video_fps/1000)
     end_frame = frame_number + int(gen_video_after*video_fps/1000)
-
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(video_file, fourcc, video_fps, (video_width, video_height), True) # noqa
 
@@ -302,20 +328,14 @@ def generate_video_of_frame(video, frame_number):
 
 
 def combine_clips():
-    global out_filename
-
-    clips = natsorted([f for f in os.listdir(clips_dir) if f.endswith(".mp4")]) # noqa
-    list_file_path = f"{temp_dir}/list.txt"
+    clips = natsorted([f for f in os.listdir(clips_dir) if f.endswith(".mkv")]) # noqa
+    global total_clips
+    global recode_video
+    total_clips = len(clips)
 
     if grid_size < 2:
         print("Combining clips")
-        list_file = open(list_file_path, 'w')
-        for f in clips:
-            list_file.write(f"file {clips_dir}/{f}\n")
-        list_file.close()
-
-        cmd = f"ffmpeg -f concat -safe 0 -i {list_file_path} -c copy -y {out_filename}" # noqa
-        os.system(cmd)
+        ffmpeg_combine([f"{clips_dir}/{f}" for f in clips], f"{out_filepath}", copy=True) # noqa
     else:
         print("Tiling clips")
         clips_per_screen = grid_size * grid_size
@@ -333,7 +353,7 @@ def combine_clips():
             for i in range(clips_per_screen):
                 selected_clips.append(f"{clips_dir}/{clips.pop(0)}")
 
-            temp_file_out = f"{clips_dir}/grid/{len(tiled_clips)}_{os.path.basename(out_filename)}.mkv" # noqa
+            temp_file_out = f"{clips_dir}/grid/{len(tiled_clips)}_{out_filename}" # noqa
 
             # epic guy from https://stackoverflow.com/questions/63993922/how-to-merge-several-videos-in-a-grid-in-one-video # noqa
             input_videos = ""
@@ -356,61 +376,43 @@ def combine_clips():
 
             cmd = f"ffmpeg{input_videos} -filter_complex \"{input_setpts}{input_overlays},premultiply=inplace=1;{audio_volume}{audio_merge}amix=inputs={clips_per_screen}[audio_out]\" -map '[audio_out]'  -loglevel error -fflags +genpts -y {temp_file_out}" # noqaa
 
-            os.system(cmd)
+            if do_tile:
+                os.system(cmd)
             pbar.update(clips_per_screen)
 
             tiled_clips.append(temp_file_out)
 
         pbar.close()
 
-        list_file = open(list_file_path, 'w')
-        for f in tiled_clips:
-            list_file.write(f"file {f}\n")
-        list_file.close()
+        if do_tile:
+            print("Combining tiled clips")
+            ffmpeg_combine(tiled_clips, f"{clips_dir}/grid/combine.mkv")
 
-        print("Combining tiled clips")
-        cmd = f"ffmpeg -f concat -safe 0 -i {list_file_path} -loglevel error -y {clips_dir}/grid/combine.mkv" # noqa
-        os.system(cmd)
+            if len(clips) > 0:
+                print("Re-coding regular clips to .mkv")
+                pbar = tqdm(total=len(clips), unit=' frames')
+                for f in clips:
+                    new_file = f"{clips_dir}/grid/{f}.mkv"
+                    cmd = f"ffmpeg -i {clips_dir}/{f} -loglevel error -y {new_file}" # noqa
+                    os.system(cmd)
+                    tiled_clips.append(new_file)
+                    pbar.update()
 
-        if len(clips) > 0:
-            print("Re-coding regular clips to .mkv")
-            pbar = tqdm(total=len(clips), unit=' frames')
-            for f in clips:
-                new_file = f"{clips_dir}/grid/{f}.mkv"
-                cmd = f"ffmpeg -i {clips_dir}/{f} -loglevel error -y {new_file}" # noqa
-                os.system(cmd)
-                tiled_clips.append(new_file)
-                pbar.update()
+                pbar.close()
 
-            pbar.close()
-
-        list_file = open(list_file_path, 'w')
-        for f in tiled_clips:
-            list_file.write(f"file {f}\n")
-        list_file.close()
-        pbar.close()
-
-        print("Combining tiled clips with regular clips")
-        out_filename += ".mkv"
-        cmd = f"ffmpeg -f concat -safe 0 -i {list_file_path} -loglevel error -y {out_filename}" # noqa
-        os.system(cmd)
-
-        global recode_video
-        recode_video = False
-
-    os.remove(list_file_path)
+            print("Combining tiled clips with regular clips")
+            ffmpeg_combine(tiled_clips, out_filepath)
 
     if cleanup_clips:
         print("Removing temporary clips")
         shutil.rmtree(clips_dir)
 
-    if recode_video:
-        print("Re-encoding the video")
-        temp_file = f"{temp_dir}/{os.path.basename(out_filename)}"
-        shutil.copy(out_filename, temp_file)
-        cmd = f"ffmpeg -i {temp_file} -fflags +genpts -y -loglevel error {out_filename}" # noqa
-        os.system(cmd)
-        os.remove(temp_file)
+    print("Re-encoding the video")
+    temp_file = f"{temp_dir}/{out_filename}"
+    shutil.copy(out_filepath, temp_file)
+    cmd = f"ffmpeg -i {temp_file} -fflags +genpts -y -loglevel error {out_filepath}" # noqa
+    os.system(cmd)
+    os.remove(temp_file)
 
 
 def add_info_clip():
@@ -419,9 +421,47 @@ def add_info_clip():
     hours = int(hours)
     minutes = int(minutes)
     seconds = int(seconds)
-    print(hours, minutes, seconds)
 
-    # out = cv2.VideoWriter('output.mkv',
+    font_path = "DejaVuSans.ttf"
+
+    img = Image.new('RGB', (video_width, video_height), color='black')
+
+    text = [
+            ['Master Magmoth', 70, 100],
+            ['Location: Faj\'ro dungeon', 30, 100],
+            ['Number of deaths: {event_count}', 30, 40],
+            ['Total time spent: {hours}h, {minutes}m', 30, 40]
+            ]
+    y = 0
+    for i, arr in enumerate(text):
+        y += arr[2]
+        font = ImageFont.truetype(font_path, arr[1])
+        txt = arr[0].format(event_count=total_clips,
+                            hours=hours, minutes=minutes, seconds=seconds)
+        draw = ImageDraw.Draw(img)
+        fontColor = (255, 255, 255)
+
+        text_size = draw.textbbox((0, 0), txt, font)
+
+        x = (video_width - text_size[2]) / 2
+        # y = (img.height - text_size[3]) / 2
+
+        draw.text((x, y), txt, font=font, fill=fontColor)
+
+    # cv2.imshow('frame', np.array(img))
+    # cv2.waitKey(2000)
+
+    intro_image = f"{temp_dir}/{out_basename}.png"
+    img.save(intro_image)
+
+    print("Combining intro with clips")
+    temp_file = f"{temp_dir}/{out_filename}"
+    shutil.copy(out_filename, temp_file)
+    cmd = f"ffmpeg -loop 1 -t {intro_duration} -i {intro_image} -i {temp_file} -f lavfi -t 0.1 -i anullsrc -filter_complex '[0][2][1:v][1:a]concat=n=2:v=1:a=1[v][a]' -map '[v]' -map '[a]' -fflags +genpts -loglevel error -y {out_filepath}" # noqa
+    os.system(cmd)
+
+    os.remove(temp_file)
+    os.remove(intro_image)
 
 
 file_index = 0
@@ -431,7 +471,8 @@ for f in files:
     file_index = file_index + 1
 
 
-combine_clips()
+if intro_duration > 0:
+    combine_clips()
 
 add_info_clip()
 
@@ -442,4 +483,4 @@ cap.release()
 
 print()
 print("All done")
-print(f"Output file: {out_filename}")
+print(f"Output file: {out_filepath}")

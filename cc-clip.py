@@ -10,6 +10,9 @@ import shutil
 from natsort import natsorted
 from PIL import ImageFont, ImageDraw, Image
 import math
+import matplotlib.pyplot as plt
+from termcolor import colored
+
 
 parser = argparse.ArgumentParser(description='Create clips of events using recordings from the hit game CrossCode') # noqa
 parser.add_argument('-t', '--type',         type=str,    required=True, choices=["ko", "death"],    help='Type of event to search for') # noqa
@@ -54,7 +57,7 @@ for i in range(len(files)):
         print("Only .mkv files are accepted.")
 
 if search_type == "ko":
-    _template = cv2.imread("ko.png", cv2.IMREAD_GRAYSCALE)
+    template = cv2.imread("ko.png", cv2.IMREAD_GRAYSCALE)
     template_cuts = [
             [910, 484],
             ]
@@ -66,6 +69,9 @@ elif search_type == "death":
             [297, 90],
             ]
     threshold = 0.95
+else:
+    print("impossible")
+    exit()
 
 template_w, template_h = template.shape
 for x in range(len(template_cuts)):
@@ -94,11 +100,15 @@ max_frame_jump = 100
 
 total_videos_length = 0
 total_clips = 0
+clips = []
+
+graph_data = [[], []]
+graph_frame_offset = 0
 
 
 def process_file(video):
     print(f"Processing file {video}")
-    global cap, video_frame_count, video_fps, video_width, video_height, start_frame, end_frame, total_videos_length, graph_data, phase_count # noqa
+    global cap, video_frame_count, video_fps, video_width, video_height, start_frame, end_frame, total_videos_length, graph_data, phase_count, beg_frames # noqa
     # Load the video file
     cap = cv2.VideoCapture(video)
     video_frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -111,7 +121,6 @@ def process_file(video):
     start_frame = 0
     end_frame = -1
 
-    graph_data = []
     phase_count = None
 
     if video == "/mnt/nvme/2023-05-10_15-31-44.mkv":
@@ -127,7 +136,7 @@ def process_file(video):
         beg_frames = get_unique_moments(frames_with_matches)
 
     if progress_graph:
-        get_boss_health_data(beg_frames)
+        get_boss_health_data()
 
     # for value in frames_with_matches:
     #     if value > 20000 and value < 23000:
@@ -138,15 +147,12 @@ def process_file(video):
     # ret, img = cap.read()
     # show_image(img, 0)
 
-    exit()
-
     # for frame in beg_frames:
     #     cap.set(cv2.CAP_PROP_POS_FRAMES, frame)
     #     ret, img = cap.read()
     #     print(frame)
     #     show_image(img, 0)
-    if do_generate_clips:
-        generate_clips(beg_frames, video)
+    generate_clips(video)
 
 
 def show_image(img, delay):
@@ -187,75 +193,131 @@ def check_frame_with_template(frame_number, frame, cut_index):
 
     # If there are any matches, add this frame to the list
     if locations is not None:
-        add_frame_to_array(frame_number, frame, locations)
+        add_frame_to_array(frame_number)
         return True
 
     return False
 
 
-def is_color_simillar(color1, color2, threshold):
+def color_diff(color1, color2):
     r1, g1, b1 = color1
-    b2, g2, r2 = color2
-    diff = math.sqrt((r1 - r2)**2 + (g1 - g2)**2 + (b1 - b2)**2)
-    # print(color1, color2, diff)
-    return diff < threshold
+    r2, g2, b2 = color2
+    diff = math.sqrt((int(r1) - r2)**2 + (int(g1) - g2)**2 + (int(b1) - b2)**2)
+    return diff
 
 
-def get_boss_health_data(beg_frames):
-    print("Getting boss health from unique moments")
+def reverse_color(color):
+    return [color[2], color[1], color[0]]
+
+
+def smaller_color_diff(color1, arr):
+    arr = [color_diff(color1, color2) for color2 in arr]
+    arr.sort()
+    return arr[0]
+
+
+def get_boss_health_data():
+    global graph_frame_offset, phase_count, beg_frames
+    print("Getting boss health data")
     for frame_number in tqdm(beg_frames, unit=' frames'):
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
         ret, img = cap.read()
         if not ret:
             continue
 
-        health = (216, 29, 56)
-        phase_start = (230, 150, 163)
-        empty = (76, 76, 76)
+        precentage = None
 
-        starting_x = 143
-        x = starting_x
-        y = 1046
-        total_bar_length = 1829 - starting_x
+        img = cv2.resize(img, (568, 320))
+        # show_image(img, 0)
+        # exit()
 
-        global phase_count
-        if not phase_count:
-            set_boss_phases = True
+        hp_color = reverse_color([255, 122, 122])
+        phase_color = reverse_color([0, 0, 0])
 
-        is_phase = False
+        empty_colors = [reverse_color([76, 76, 76]),
+                        reverse_color([95, 68, 70]),
+                        reverse_color([255, 255, 255]),
+                        reverse_color([0, 0, 0])]
 
-        while True:
+        set_boss_phases = not phase_count
+
+        start_x = 42
+        end_x = 551
+        x = start_x - 1
+        y = 309
+        total_bar_length = end_x - start_x
+
+        while x < end_x + 1:
             x += 1
-            color = img[y, x]
-            if is_color_simillar(color, health, threshold=8):
-                is_phase = False
-            elif is_color_simillar(color, empty, threshold=5):
-                is_phase = False
-            elif is_color_simillar(color, phase_start, threshold=5):
-                if set_boss_phases:
-                    phase_count = round(total_bar_length / (x - starting_x + 5)) # noqa
+            ccolor = img[y, x]
+            ncolor = img[y, x+1]
 
-                is_phase = True
-            else:
-                if is_phase:
+            # print(ccolor)
+            hp_diff = color_diff(ccolor, hp_color)
+            # print(f"hp diff: {hp_diff}")
+            if hp_diff < 45:
+                # img[y, x] = (0, 255, 255)
+                continue
+
+            if x < end_x - 3:
+                diff_phase = color_diff(ncolor, phase_color)
+                # print(f"phase diff: {diff_phase}")
+                if diff_phase < 20:
+                    x += 2
+                    if set_boss_phases:
+                        phase_count = round(total_bar_length / (x - start_x)) # noqa
+                        set_boss_phases = False
                     continue
-                # img[y, x] = (255, 0, 0)
-                # show_image(img, 0)
-                precentage = (x - starting_x + 5) / total_bar_length * 100
+
+            diff_empty = smaller_color_diff(ccolor, empty_colors)
+            # print(f"empty diff: {diff_empty}")
+
+            if diff_empty < 30:
+                precentage = (x - start_x) / total_bar_length * 100
                 break
 
-        with graph_data_lock:
-            graph_data.append((frame_number, precentage))
+            precentage = -2
+            break
+            # print(ccolor)
+            # cv2.putText(img, "fatal error", (0, 300), cv2.FONT_HERSHEY_SIMPLEX, 3, (255, 0, 0), 3) # noqa
+            # img[y-1, x] = (255, 0, 0)
+            # img[y+1, x] = (255, 0, 0)
+            # show_image(img, 0)
+            # exit()
 
-    # print(f"Boss phases: {phase_count}")
+        if precentage == -2:
+            print(colored(f"WARNING: Boss hp bar reading error at {frame_number}, skipping", 'yellow')) # noqa
+            beg_frames.remove(frame_number)
+            continue
+
+        if not precentage:
+            print("Boss hp bar not detected. Not a bossfight? Consider disabling --progress-graph") # noqa
+            show_image(img, 0)
+        else:
+            if precentage >= 101:
+                print(f"Precentage higher than 101: {precentage}. Error reading bar hp") # noqa
+                exit()
+
+            if precentage > 100:
+                precentage = 100
+            with graph_data_lock:
+                # cv2.putText(img, str(round(precentage, 3)), (300, 300), cv2.FONT_HERSHEY_SIMPLEX, 3, (255, 0, 0), 3) # noqa
+                # print(frame_number)
+                # print(f"x: {x}")
+                # show_image(img, 0)
+
+                graph_data[0].append(frame_number + graph_frame_offset)
+                graph_data[1].append(precentage)
+
+    graph_frame_offset += video_frame_count
 
 
-def add_frame_to_array(frame_number, frame, locations):
+def add_frame_to_array(frame_number):
     with frame_match_array_lock:
         frames_with_matches.append(frame_number)
 
 
-def process_frame(thread_idx):
+def process_frame():
     global frame_number
     while True:
         with frame_lock:
@@ -308,6 +370,7 @@ def search_for_frames():
 def get_unique_moments(frames):
     print("Searching for unique moments")
 
+    global beg_frames
     beg_frames = []
     last_frame = -100000
 
@@ -318,7 +381,6 @@ def get_unique_moments(frames):
         last_frame = frame
 
     print(f"\nFound {len(beg_frames)} frames: {beg_frames}\n")
-    return beg_frames
 
 
 def ffmpeg_combine(arr, filename, copy=True):
@@ -336,7 +398,7 @@ def ffmpeg_combine(arr, filename, copy=True):
     os.remove(list_file_path)
 
 
-def generate_clips(beg_frames, video):
+def generate_clips(video):
     print("Generating clips")
 
     global pbar
@@ -353,50 +415,54 @@ def generate_clips(beg_frames, video):
 def generate_video_of_frame(video, frame_number):
     filename = f"{file_index}_{frame_number}.mkv"
 
-    video_file = f"{temp_dir}/video-{filename}"
-    audio_file = f"{temp_dir}/audio-{filename}"
+    if do_generate_clips:
+        video_file = f"{temp_dir}/video-{filename}"
+        audio_file = f"{temp_dir}/audio-{filename}"
 
-    start_frame = frame_number - int(gen_video_before*video_fps/1000)
-    end_frame = frame_number + int(gen_video_after*video_fps/1000)
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(video_file, fourcc, video_fps, (video_width, video_height), True) # noqa
+        start_frame = frame_number - int(gen_video_before*video_fps/1000)
+        end_frame = frame_number + int(gen_video_after*video_fps/1000)
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(video_file, fourcc, video_fps, (video_width, video_height), True) # noqa
 
-    cap = cv2.VideoCapture(video)
-    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-    for i in range(start_frame, end_frame):
-        ret, frame = cap.read()
-        if not ret:
-            break
-        out.write(frame)
+        cap = cv2.VideoCapture(video)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+        for _ in range(start_frame, end_frame):
+            ret, frame = cap.read()
+            if not ret:
+                break
+            out.write(frame)
 
-    out.release()
-    cap.release()
+        out.release()
+        cap.release()
 
-    # Extract audio
-    start_time = str(max(0, frame_number / video_fps - gen_video_before/1000)) # noqa
-    end_time = str((gen_video_before+gen_video_after)/1000)
-    cmd = f"ffmpeg -i {video} -ss {start_time} -t {end_time} -loglevel error -vn -acodec copy {audio_file}" # noqa
-    os.system(cmd)
+        # Extract audio
+        start_time = str(max(0, frame_number / video_fps - gen_video_before/1000)) # noqa
+        end_time = str((gen_video_before+gen_video_after)/1000)
+        cmd = f"ffmpeg -i {video} -ss {start_time} -t {end_time} -loglevel error -vn -acodec copy {audio_file}" # noqa
+        os.system(cmd)
 
-    # Combine video and audio
-    cmd = f"ffmpeg -i {video_file} -i {audio_file} -c:v copy -map 0:v:0 -map 1:a:0 -loglevel error -y clips/{filename}" # noqa
-    os.system(cmd)
+        # Combine video and audio
+        cmd = f"ffmpeg -i {video_file} -i {audio_file} -c:v copy -map 0:v:0 -map 1:a:0 -loglevel error -y {clips_dir}/{filename}" # noqa
+        os.system(cmd)
 
-    # Clean up
-    os.remove(video_file)
-    os.remove(audio_file)
+        # Clean up
+        os.remove(video_file)
+        os.remove(audio_file)
 
     with frame_lock:
+        clips.append(filename)
         pbar.update()
 
     pass
 
 
 def combine_clips():
-    clips = natsorted([f for f in os.listdir(clips_dir) if f.endswith(".mkv")]) # noqa
-    global total_clips
-    global recode_video
+    global clips, total_clips
+    clips = natsorted(clips) # noqa
     total_clips = len(clips)
+    if total_clips == 0:
+        print(colored("Something went wrong, clips size is 0", 'red'))
+        exit()
 
     if grid_size < 2:
         print("Combining clips")
@@ -415,7 +481,7 @@ def combine_clips():
 
         while len(clips) >= clips_per_screen:
             selected_clips = []
-            for i in range(clips_per_screen):
+            for _ in range(clips_per_screen):
                 selected_clips.append(f"{clips_dir}/{clips.pop(0)}")
 
             temp_file_out = f"{clips_dir}/grid/{len(tiled_clips)}_{out_filename}" # noqa
@@ -449,21 +515,20 @@ def combine_clips():
 
         pbar.close()
 
-        if do_tile:
-            print("Combining tiled clips")
-            ffmpeg_combine(tiled_clips, f"{clips_dir}/grid/combine.mkv")
+        print("Combining tiled clips")
+        ffmpeg_combine(tiled_clips, f"{clips_dir}/grid/combine.mkv")
 
-            if len(clips) > 0:
-                print("Re-coding regular clips to .mkv")
-                pbar = tqdm(total=len(clips), unit=' frames')
-                for f in clips:
-                    new_file = f"{clips_dir}/grid/{f}.mkv"
-                    cmd = f"ffmpeg -i {clips_dir}/{f} -loglevel error -y {new_file}" # noqa
-                    os.system(cmd)
-                    tiled_clips.append(new_file)
-                    pbar.update()
+        if len(clips) > 0:
+            print("Re-coding regular clips to .mkv")
+            pbar = tqdm(total=len(clips), unit=' frames')
+            for f in clips:
+                new_file = f"{clips_dir}/grid/{f}.mkv"
+                cmd = f"ffmpeg -i {clips_dir}/{f} -loglevel error -y {new_file}" # noqa
+                os.system(cmd)
+                tiled_clips.append(new_file)
+                pbar.update()
 
-                pbar.close()
+            pbar.close()
 
             print("Combining tiled clips with regular clips")
             ffmpeg_combine(tiled_clips, out_filepath)
@@ -513,8 +578,70 @@ def add_info_clip():
 
         draw.text((x, y), txt, font=font, fill=fontColor)
 
-    # cv2.imshow('frame', np.array(img))
-    # cv2.waitKey(2000)
+    x_data = [frame_number/video_fps for frame_number in graph_data[0]]
+    y_data = graph_data[1]
+    death_count = len(x_data)
+
+    fig, ax = plt.subplots(figsize=(min(video_width - 20 * 2, total_videos_length/60/10), 6)) # noqa
+
+    # Add labels and title
+    plt.xlabel('time (hh:mm)', color='black')
+    plt.ylabel('% boss hp left', color='black')
+    ax.set_title('Boss hp on deaths over time', color='black', y=1.05)
+
+    ax.plot(x_data, y_data, color='#1f77b4')
+
+    ticks = [int(100/phase_count*i) for i in range(1, phase_count)]
+    tick_labels = [f"{ticks[i]}%" for i in range(phase_count-1)]
+    plt.yticks(ticks, tick_labels)
+    ax.set_ylim(0, 110)
+
+    # the colors are inverted here for some reson
+    plt.grid(axis='y', color='#d8d8d8', linestyle='-', linewidth=2)
+    fig.patch.set_facecolor('gray')
+    ax.scatter(
+            x_data,
+            [y_data[i] for i in range(death_count)],
+            s=[40 for _ in range(death_count)],
+            c=['#2ca02c' for _ in range(death_count)],
+            zorder=2)
+
+    xtick_count = 8
+    xticks = []
+    xtick_labels = []
+    for i in range(xtick_count + 1):
+        pos = x_data[-1]/xtick_count*i
+        xticks.append(pos)
+
+        minutes, seconds = divmod(pos, 60)
+        hours, minutes = divmod(minutes, 60)
+        hours = int(hours)
+        minutes = int(minutes)
+        seconds = int(seconds)
+        xtick_labels.append('{:02d}:{:02d}'.format(hours, minutes))
+
+    ax.set_xticks(xticks)
+    ax.set_xticklabels(xtick_labels, minor=False)
+
+    canvas = fig.canvas
+    canvas.draw()
+    graph_width, graph_height = canvas.get_width_height()
+    plot_data = np.frombuffer(canvas.tostring_rgb(), dtype=np.uint8).reshape((graph_height, graph_width, 3)) # noqa
+    plot_data_copy = np.copy(plot_data)
+
+    # fix colors being wrong for some reason
+    for x1 in range(len(plot_data)):
+        for y1 in range(len(plot_data[x1])):
+            r, g, b = plot_data[x1][y1]
+            plot_data_copy[x1][y1] = (b, g, r)
+
+    graph_img = Image.fromarray(plot_data_copy)
+
+    x = int((video_width - graph_img.size[0]) / 2)
+    y += 100
+    img.paste(graph_img, (x, y))
+
+    # show_image(np.array(img), 0)
 
     intro_image = f"{temp_dir}/{out_basename}.png"
     img.save(intro_image)

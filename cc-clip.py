@@ -361,8 +361,8 @@ def search_for_frames():
     cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
 
     threads = []
-    for i in range(thread_count):
-        t = threading.Thread(target=process_frame, args=(i,))
+    for _ in range(thread_count):
+        t = threading.Thread(target=process_frame, args=())
         t.start()
         threads.append(t)
 

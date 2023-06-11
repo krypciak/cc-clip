@@ -1,4 +1,3 @@
-# cc-clip
 Python script that makes clips of deaths from recordings from the game CrossCode
 
 ```
@@ -18,6 +17,8 @@ Other arguments:
 - `--before` time before the event to put in clips (in miliseconds) (default:150)<br>
 - `--grid SIZE` create a SIZExSIZE grid of clips (default: no grid)<br>
 - `--intro-duration SECONDS` Intro duration, `0` to disable (default: 2)<br>
+- `--fight-name NAME` This name will be put in the intro<br>
+- `--fight-location LOCATION` This will be put in the intro<br>
 - `--progress-graph` Enable generation of a graph that represents boss % hp on deaths. Use only on boss fights<br>
 - `--threads N`use N threads (default: 4)<br>
 
@@ -28,6 +29,7 @@ Debug options:<br>
 
 Example usage:
 ```
-python cc-clip.py --type death --threads 16 -B 1000 -A 700 -o clip.mkv --grid 4 --intro-duration 6 --progess-graph \
-  ~/Videos/2023-05-10_15-31-44.mkv ~/Videos/2023-05-10_16-25-09.mkv
+python cc-clip.py --type death --threads 16 -B 1000 -A 700 -o clip.mkv --grid 4 \
+    --intro-duration 6 "Master Magmoth" --fight-location "Faj'ro dungeon" --progess-graph \
+    ~/Videos/2023-05-10_15-31-44.mkv ~/Videos/2023-05-10_16-25-09.mkv
 ```

@@ -26,6 +26,8 @@ parser.add_argument('--no-delete-clips',    action='store_false', default=True, 
 parser.add_argument('--no-generate-clips',  action='store_false', default=True,                     help='Skip clip generation (use already existing ones)') # noqa
 parser.add_argument('--no-tile',            action='store_false', default=True,                     help='Skip tile video generation (use already exisiting ones)') # noqa
 parser.add_argument('--intro-duration',     type=float, default=2,                                  help='Duration of the intro. 0 to disable (default: 2)') # noqa
+parser.add_argument('--fight-name',         type=str,                                               help='Fight name to put in intro') # noqa
+parser.add_argument('--fight-location',     type=str,                                               help='Fight location to put in intro') # noqa
 parser.add_argument('--progess-graph',      action='store_true', default=False,                     help='Generate boss progress graph (bosses only)') # noqa
 
 args = parser.parse_args()
@@ -40,6 +42,10 @@ gen_video_after = args.after
 do_tile = args.no_tile
 grid_size = args.grid
 intro_duration = args.intro_duration
+fight_location = args.fight_location
+fight_name = args.fight_name
+# "Faj\'ro dungeon"
+# fight_name = "Master Magmoth"
 progress_graph = args.progess_graph
 
 
@@ -557,8 +563,8 @@ def add_info_clip():
     img = Image.new('RGB', (video_width, video_height), color='black')
 
     text = [
-            ['Master Magmoth', 70, 100],
-            ['Location: Faj\'ro dungeon', 30, 100],
+            [fight_name, 70, 100],
+            [f'Location: {fight_location}', 30, 100],
             ['Number of deaths: {event_count}', 30, 40],
             ['Total time spent: {hours}h, {minutes}m', 30, 40]
             ]

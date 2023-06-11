@@ -15,20 +15,23 @@ from termcolor import colored
 
 
 parser = argparse.ArgumentParser(description='Create clips of events using recordings from the hit game CrossCode') # noqa
-parser.add_argument('-t', '--type',         type=str,    required=True, choices=["ko", "death"],    help='Type of event to search for') # noqa
-parser.add_argument('files',                type=argparse.FileType('r'), nargs='+',                 help='The files to process') # noqa
-parser.add_argument('-o', '--output',       type=str, required=True,                                help='Output file destination path') # noqa
-parser.add_argument('-A', '--after',        type=int, default=150,                                  help='Number of threads to use when searching for deaths (default: 4)') # noqa
-parser.add_argument('-B', '--before',       type=int, default=500,                                  help='Clip time before event in ms (default: 150)') # noqa
-parser.add_argument('--grid',               type=int, default=1,                                    help='Grid size') # noqa
-parser.add_argument('--threads',            type=int, default=4,                                    help='Clip time after event in ms (default: 500)') # noqa
-parser.add_argument('--no-delete-clips',    action='store_false', default=True,                     help='Dont delete the clips at the end') # noqa
-parser.add_argument('--no-generate-clips',  action='store_false', default=True,                     help='Skip clip generation (use already existing ones)') # noqa
-parser.add_argument('--no-tile',            action='store_false', default=True,                     help='Skip tile video generation (use already exisiting ones)') # noqa
-parser.add_argument('--intro-duration',     type=float, default=2,                                  help='Duration of the intro. 0 to disable (default: 2)') # noqa
-parser.add_argument('--fight-name',         type=str,                                               help='Fight name to put in intro') # noqa
-parser.add_argument('--fight-location',     type=str,                                               help='Fight location to put in intro') # noqa
-parser.add_argument('--progess-graph',      action='store_true', default=False,                     help='Generate boss progress graph (bosses only)') # noqa
+parser.add_argument('-t', '--type',         type=str, required=True, choices=["ko", "death"], help='Type of event to search for') # noqa
+parser.add_argument('files',                type=argparse.FileType('r'), nargs='+',           help='The files to process') # noqa
+parser.add_argument('-o', '--output',       type=str, required=True,                          help='Output file destination path') # noqa
+parser.add_argument('-A', '--after',        type=int,             default=150,                help='Number of threads to use when searching for deaths (default: 4)') # noqa
+parser.add_argument('-B', '--before',       type=int,             default=500,                help='Clip time before event in ms (default: 150)') # noqa
+parser.add_argument('--grid',               type=int,             default=1,                  help='Grid size') # noqa
+parser.add_argument('--threads',            type=int,             default=4,                  help='Clip time after event in ms (default: 500)') # noqa
+parser.add_argument('--intro-duration',     type=float,           default=2,                  help='Duration of the intro. 0 to disable (default: 2)') # noqa
+parser.add_argument('--fight-name',         type=str,                                         help='Fight name to put in intro') # noqa
+parser.add_argument('--fight-location',     type=str,                                         help='Fight location to put in intro') # noqa
+parser.add_argument('--progess-graph',      action='store_true',  default=False,              help='Generate boss progress graph (bosses only)') # noqa
+parser.add_argument('--last-count',         type=int,             default=3,                  help='Number of clips at the end to apply custom -B and -A, and also keep from being tiled (default: 3)') # noqa
+parser.add_argument('-lA', '--last-after',  type=int,             default=600,                help='Clip time before event in ms, only applies to last clips (default: 400)') # noqa
+parser.add_argument('-lB', '--last-before', type=int,             default=4000,               help='Clip time after event in ms, only applies to last clips (default: 1500)') # noqa
+parser.add_argument('--no-delete-clips',    action='store_false', default=True,               help='Dont delete the clips at the end') # noqa
+parser.add_argument('--no-generate-clips',  action='store_false', default=True,               help='Skip clip generation (use already existing ones)') # noqa
+parser.add_argument('--no-tile',            action='store_false', default=True,               help='Skip tile video generation (use already exisiting ones)') # noqa
 
 args = parser.parse_args()
 search_type = args.type
@@ -44,9 +47,11 @@ grid_size = args.grid
 intro_duration = args.intro_duration
 fight_location = args.fight_location
 fight_name = args.fight_name
-# "Faj\'ro dungeon"
-# fight_name = "Master Magmoth"
 progress_graph = args.progess_graph
+
+last_clip_count = args.last_count
+last_after = args.last_after
+last_before = args.last_before
 
 
 if not out_filepath.endswith(".mkv"):
@@ -405,12 +410,15 @@ def ffmpeg_combine(arr, filename, copy=True):
 
 
 def generate_clips(video):
+    # make the error checker shut up, beg_frames cannot be None here
+    if beg_frames is None:
+        return
     print("Generating clips")
 
     global pbar
     pbar = tqdm(total=len(beg_frames), unit='clip')
     with concurrent.futures.ThreadPoolExecutor(max_workers=thread_count) as executor: # noqa
-        futures = [executor.submit(generate_video_of_frame, video, frame_number) for frame_number in beg_frames] # noqa
+        futures = [executor.submit(generate_video_of_frame, video, frame_number, i) for i, frame_number in enumerate(beg_frames)] # noqa
 
         concurrent.futures.wait(futures)
         pbar.close()
@@ -418,15 +426,24 @@ def generate_clips(video):
     print("\n")
 
 
-def generate_video_of_frame(video, frame_number):
+def generate_video_of_frame(video, frame_number, index):
+    # make the error checker shut up, beg_frames cannot be None here
+    if beg_frames is None:
+        return
+
     filename = f"{file_index}_{frame_number}.mkv"
 
     if do_generate_clips:
         video_file = f"{temp_dir}/video-{filename}"
         audio_file = f"{temp_dir}/audio-{filename}"
 
-        start_frame = frame_number - int(gen_video_before*video_fps/1000)
-        end_frame = frame_number + int(gen_video_after*video_fps/1000)
+        is_last_enougth = len(beg_frames)-last_clip_count > index
+        time_before = (gen_video_before if is_last_enougth else last_before)
+        time_after = (gen_video_after if is_last_enougth else last_after)
+
+        start_frame = frame_number - int(time_before*video_fps/1000) # noqa
+        end_frame = frame_number + int(time_after*video_fps/1000) # noqa
+
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(video_file, fourcc, video_fps, (video_width, video_height), True) # noqa
 
@@ -442,8 +459,8 @@ def generate_video_of_frame(video, frame_number):
         cap.release()
 
         # Extract audio
-        start_time = str(max(0, frame_number / video_fps - gen_video_before/1000)) # noqa
-        end_time = str((gen_video_before+gen_video_after)/1000)
+        start_time = str(max(0, frame_number / video_fps - time_before/1000)) # noqa
+        end_time = str((time_before+time_after)/1000)
         cmd = f"ffmpeg -i {video} -ss {start_time} -t {end_time} -loglevel error -vn -acodec copy {audio_file}" # noqa
         os.system(cmd)
 
@@ -488,6 +505,8 @@ def combine_clips():
         while len(clips) >= clips_per_screen:
             selected_clips = []
             for _ in range(clips_per_screen):
+                if len(clips) <= last_clip_count:
+                    break
                 selected_clips.append(f"{clips_dir}/{clips.pop(0)}")
 
             temp_file_out = f"{clips_dir}/grid/{len(tiled_clips)}_{out_filename}" # noqa

@@ -47,7 +47,7 @@ grid_size = args.grid
 intro_duration = args.intro_duration
 fight_location = args.fight_location
 fight_name = args.fight_name
-progress_graph = args.progess_graph
+progress_graph = args.progress_graph
 
 last_clip_count = args.last_count
 last_after = args.last_after
@@ -239,7 +239,8 @@ def get_boss_health_data():
         empty_colors = [reverse_color([76, 76, 76]),
                         reverse_color([95, 68, 70]),
                         reverse_color([255, 255, 255]),
-                        reverse_color([0, 0, 0])]
+                        reverse_color([0, 0, 0]),
+                        reverse_color([36, 0, 0])]
 
         set_boss_phases = not phase_count
 
@@ -257,7 +258,7 @@ def get_boss_health_data():
             # print(ccolor)
             hp_diff = color_diff(ccolor, hp_color)
             # print(f"hp diff: {hp_diff}")
-            if hp_diff < 45:
+            if hp_diff < 55:
                 # img[y, x] = (0, 255, 255)
                 continue
 
@@ -468,6 +469,7 @@ def combine_clips():
     global clips, total_clips
     clips = natsorted(clips) # noqa
     total_clips = len(clips)
+    clips_backup = clips.copy()
     if total_clips == 0:
         print(colored("Something went wrong, clips size is 0", 'red'))
         exit()
@@ -490,10 +492,10 @@ def combine_clips():
         while len(clips) >= clips_per_screen:
             selected_clips = []
             for _ in range(clips_per_screen):
-                if len(clips) <= last_clip_count:
-                    break
                 selected_clips.append(f"{clips_dir}/{clips.pop(0)}")
 
+            if len(clips) <= last_clip_count:
+                break
             if len(selected_clips) < 1:
                 break
 
@@ -530,6 +532,9 @@ def combine_clips():
 
         print("Combining tiled clips")
         ffmpeg_combine(tiled_clips, f"{clips_dir}/grid/combine.mkv")
+
+        if len(clips) < last_clip_count:
+            clips = clips_backup[-last_clip_count:]
 
         if len(clips) > 0:
             print("Re-coding regular clips to .mkv")
@@ -588,11 +593,12 @@ def add_info_clip():
         draw.text((x, y), txt, font=font, fill=fontColor)
 
     if progress_graph:
+        assert phase_count is not None
         x_data = [frame_number/video_fps for frame_number in graph_data[0]]
         y_data = graph_data[1]
         death_count = len(x_data)
 
-        fig, ax = plt.subplots(figsize=(min(video_width - 20 * 2, total_videos_length/60/10), 6)) # noqa
+        fig, ax = plt.subplots(figsize=(max(8, min(video_width - 20 * 2, total_videos_length/60/10)), 6)) # noqa
 
         # Add labels and title
         plt.xlabel('time (hh:mm)', color='black')

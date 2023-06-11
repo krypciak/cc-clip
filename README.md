@@ -3,7 +3,7 @@ Python script that makes clips of deaths from recordings from the game CrossCode
 ```
 usage: cc-clip.py [-h] -t {ko,death} -o OUTPUT [-A AFTER] [-B BEFORE] [--grid GRID] [--threads THREADS]
                   [--intro-duration INTRO_DURATION] [--fight-name FIGHT_NAME]
-                  [--fight-location FIGHT_LOCATION] [--progess-graph] [--last-count LAST_COUNT]
+                  [--fight-location FIGHT_LOCATION] [--progress-graph] [--last-count LAST_COUNT]
                   [-lA LAST_AFTER] [-lB LAST_BEFORE] [--no-delete-clips] [--no-generate-clips] [--no-tile]
                   files [files ...]
 ```
@@ -35,7 +35,7 @@ Debug options:<br>
 Example usage:
 ```
 python cc-clip.py --type death --threads 16 -B 1000 -A 700 -o clip.mkv --grid 4 \
-    --intro-duration 6 "Master Magmoth" --fight-location "Faj'ro dungeon" --progess-graph \
+    --intro-duration 6 "Master Magmoth" --fight-location "Faj'ro dungeon" --progress-graph \
     --last-count 5 -lB 4000 -lA 600 \
     ~/Videos/2023-05-10_15-31-44.mkv ~/Videos/2023-05-10_16-25-09.mkv
 ```

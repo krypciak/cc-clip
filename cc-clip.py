@@ -25,7 +25,7 @@ parser.add_argument('--threads',            type=int,             default=4,    
 parser.add_argument('--intro-duration',     type=float,           default=2,                  help='Duration of the intro. 0 to disable (default: 2)') # noqa
 parser.add_argument('--fight-name',         type=str,                                         help='Fight name to put in intro') # noqa
 parser.add_argument('--fight-location',     type=str,                                         help='Fight location to put in intro') # noqa
-parser.add_argument('--progess-graph',      action='store_true',  default=False,              help='Generate boss progress graph (bosses only)') # noqa
+parser.add_argument('--progress-graph',      action='store_true',  default=False,              help='Generate boss progress graph (bosses only)') # noqa
 parser.add_argument('--last-count',         type=int,             default=3,                  help='Number of clips at the end to apply custom -B and -A, and also keep from being tiled (default: 3)') # noqa
 parser.add_argument('-lA', '--last-after',  type=int,             default=600,                help='Clip time before event in ms, only applies to last clips (default: 400)') # noqa
 parser.add_argument('-lB', '--last-before', type=int,             default=4000,               help='Clip time after event in ms, only applies to last clips (default: 1500)') # noqa
@@ -134,17 +134,8 @@ def process_file(video):
 
     phase_count = None
 
-    if video == "/mnt/nvme/2023-05-10_15-31-44.mkv":
-        beg_frames = [4921, 6100, 10669, 15979, 20048, 21119, 22439, 23485, 24557, 26353, 26987, 30177, 33496, 35333, 38442, 40647, 44236, 44852, 48533, 51639, 53523, 57545, 62014, 65637, 69571, 73528, 76983, 81729, 85428, 89044, 93895, 94901, 102191, 105385, 108995, 119393] # noqa
-    elif video == "/mnt/nvme/2023-05-10_16-25-09.mkv":
-        beg_frames = [4521, 8152, 11638, 14533, 20316, 23720, 27468, 32350, 39232, 42638, 46765, 47409, 49709, 56499, 69253, 73954, 81490, 92110, 93241, 100922, 102548, 103224, 106516, 117062, 122547, 126149, 136252, 141998, 150454, 159326, 162859, 166348, 170123] # noqa
-    elif video == "/mnt/nvme/2023-05-10_17-24-38.mkv":
-        beg_frames = [2402, 6723, 14474, 18377, 22555, 25873, 29549, 33152, 41947, 50993, 54552, 58006] # noqa
-    elif video == "/mnt/nvme/2023-05-10_23-40-18.mkv":
-        beg_frames = [3907, 9031, 14044, 20933, 23999, 32276, 38655, 46938, 49310, 56988, 59211, 61611, 64720, 67706, 79421, 81277, 93254, 97083, 110863, 122856, 135613] # noqa
-    else:
-        search_for_frames()
-        beg_frames = get_unique_moments(frames_with_matches)
+    search_for_frames()
+    beg_frames = get_unique_moments(frames_with_matches)
 
     if progress_graph:
         get_boss_health_data()
@@ -392,6 +383,7 @@ def get_unique_moments(frames):
         last_frame = frame
 
     print(f"\nFound {len(beg_frames)} frames: {beg_frames}\n")
+    return beg_frames
 
 
 def ffmpeg_combine(arr, filename, copy=True):
@@ -410,9 +402,6 @@ def ffmpeg_combine(arr, filename, copy=True):
 
 
 def generate_clips(video):
-    # make the error checker shut up, beg_frames cannot be None here
-    if beg_frames is None:
-        return
     print("Generating clips")
 
     global pbar
@@ -427,10 +416,6 @@ def generate_clips(video):
 
 
 def generate_video_of_frame(video, frame_number, index):
-    # make the error checker shut up, beg_frames cannot be None here
-    if beg_frames is None:
-        return
-
     filename = f"{file_index}_{frame_number}.mkv"
 
     if do_generate_clips:
@@ -509,6 +494,9 @@ def combine_clips():
                     break
                 selected_clips.append(f"{clips_dir}/{clips.pop(0)}")
 
+            if len(selected_clips) < 1:
+                break
+
             temp_file_out = f"{clips_dir}/grid/{len(tiled_clips)}_{out_filename}" # noqa
 
             # epic guy from https://stackoverflow.com/questions/63993922/how-to-merge-several-videos-in-a-grid-in-one-video # noqa
@@ -530,7 +518,7 @@ def combine_clips():
                 audio_volume += f"[{index}:a]volume={grid_size}[a{index}];"
                 audio_merge += f"[a{index}]"
 
-            cmd = f"ffmpeg{input_videos} -filter_complex \"{input_setpts}{input_overlays},premultiply=inplace=1;{audio_volume}{audio_merge}amix=inputs={clips_per_screen}[audio_out]\" -map '[audio_out]'  -loglevel error -fflags +genpts -y {temp_file_out}" # noqaa
+            cmd = f"ffmpeg{input_videos} -filter_complex \"{input_setpts}{input_overlays},premultiply=inplace=1;{audio_volume}{audio_merge}amix=inputs={clips_per_screen}[audio_out]\" -map '[audio_out]' -fflags +genpts -loglevel error -y {temp_file_out}" # noqaa
 
             if do_tile:
                 os.system(cmd)
@@ -557,10 +545,6 @@ def combine_clips():
 
             print("Combining tiled clips with regular clips")
             ffmpeg_combine(tiled_clips, out_filepath)
-
-    if cleanup_clips:
-        print("Removing temporary clips")
-        shutil.rmtree(clips_dir)
 
     print("Re-encoding the video")
     temp_file = f"{temp_dir}/{out_filename}"
@@ -603,68 +587,69 @@ def add_info_clip():
 
         draw.text((x, y), txt, font=font, fill=fontColor)
 
-    x_data = [frame_number/video_fps for frame_number in graph_data[0]]
-    y_data = graph_data[1]
-    death_count = len(x_data)
+    if progress_graph:
+        x_data = [frame_number/video_fps for frame_number in graph_data[0]]
+        y_data = graph_data[1]
+        death_count = len(x_data)
 
-    fig, ax = plt.subplots(figsize=(min(video_width - 20 * 2, total_videos_length/60/10), 6)) # noqa
+        fig, ax = plt.subplots(figsize=(min(video_width - 20 * 2, total_videos_length/60/10), 6)) # noqa
 
-    # Add labels and title
-    plt.xlabel('time (hh:mm)', color='black')
-    plt.ylabel('% boss hp left', color='black')
-    ax.set_title('Boss hp on deaths over time', color='black', y=1.05)
+        # Add labels and title
+        plt.xlabel('time (hh:mm)', color='black')
+        plt.ylabel('% boss hp left', color='black')
+        ax.set_title('Boss hp on deaths over time', color='black', y=1.05)
 
-    ax.plot(x_data, y_data, color='#1f77b4')
+        ax.plot(x_data, y_data, color='#1f77b4')
 
-    ticks = [int(100/phase_count*i) for i in range(1, phase_count)]
-    tick_labels = [f"{ticks[i]}%" for i in range(phase_count-1)]
-    plt.yticks(ticks, tick_labels)
-    ax.set_ylim(0, 110)
+        ticks = [int(100/phase_count*i) for i in range(1, phase_count)]
+        tick_labels = [f"{ticks[i]}%" for i in range(phase_count-1)]
+        plt.yticks(ticks, tick_labels)
+        ax.set_ylim(0, 110)
 
-    # the colors are inverted here for some reson
-    plt.grid(axis='y', color='#d8d8d8', linestyle='-', linewidth=2)
-    fig.patch.set_facecolor('gray')
-    ax.scatter(
-            x_data,
-            [y_data[i] for i in range(death_count)],
-            s=[40 for _ in range(death_count)],
-            c=['#2ca02c' for _ in range(death_count)],
-            zorder=2)
+        # the colors are inverted here for some reson
+        plt.grid(axis='y', color='#d8d8d8', linestyle='-', linewidth=2)
+        fig.patch.set_facecolor('gray')
+        ax.scatter(
+                x_data,
+                [y_data[i] for i in range(death_count)],
+                s=[40 for _ in range(death_count)],
+                c=['#2ca02c' for _ in range(death_count)],
+                zorder=2)
 
-    xtick_count = 8
-    xticks = []
-    xtick_labels = []
-    for i in range(xtick_count + 1):
-        pos = x_data[-1]/xtick_count*i
-        xticks.append(pos)
+        xtick_count = 8
+        xticks = []
+        xtick_labels = []
+        for i in range(xtick_count + 1):
+            pos = x_data[-1]/xtick_count*i
+            xticks.append(pos)
 
-        minutes, seconds = divmod(pos, 60)
-        hours, minutes = divmod(minutes, 60)
-        hours = int(hours)
-        minutes = int(minutes)
-        seconds = int(seconds)
-        xtick_labels.append('{:02d}:{:02d}'.format(hours, minutes))
+            minutes, seconds = divmod(pos, 60)
+            hours, minutes = divmod(minutes, 60)
+            hours = int(hours)
+            minutes = int(minutes)
+            seconds = int(seconds)
+            xtick_labels.append('{:02d}:{:02d}'.format(hours, minutes))
 
-    ax.set_xticks(xticks)
-    ax.set_xticklabels(xtick_labels, minor=False)
+        ax.set_xticks(xticks)
+        ax.set_xticklabels(xtick_labels, minor=False)
 
-    canvas = fig.canvas
-    canvas.draw()
-    graph_width, graph_height = canvas.get_width_height()
-    plot_data = np.frombuffer(canvas.tostring_rgb(), dtype=np.uint8).reshape((graph_height, graph_width, 3)) # noqa
-    plot_data_copy = np.copy(plot_data)
+        canvas = fig.canvas
+        canvas.draw()
+        graph_width, graph_height = canvas.get_width_height()
+        plot_data = np.frombuffer(canvas.tostring_rgb(), dtype=np.uint8).reshape((graph_height, graph_width, 3)) # noqa
+        plot_data_copy = np.copy(plot_data)
 
-    # fix colors being wrong for some reason
-    for x1 in range(len(plot_data)):
-        for y1 in range(len(plot_data[x1])):
-            r, g, b = plot_data[x1][y1]
-            plot_data_copy[x1][y1] = (b, g, r)
+        # fix colors being wrong for some reason
+        for x1 in range(len(plot_data)):
+            for y1 in range(len(plot_data[x1])):
+                r, g, b = plot_data[x1][y1]
+                plot_data_copy[x1][y1] = (b, g, r)
 
-    graph_img = Image.fromarray(plot_data_copy)
+        graph_img = Image.fromarray(plot_data_copy)
 
-    x = int((video_width - graph_img.size[0]) / 2)
-    y += 100
-    img.paste(graph_img, (x, y))
+        x = int((video_width - graph_img.size[0]) / 2)
+        y += 100
+        img.paste(graph_img, (x, y))
 
     # show_image(np.array(img), 0)
 
@@ -697,6 +682,9 @@ add_info_clip()
 # Release the video capture object
 cap.release()
 
+if cleanup_clips:
+    print("Removing temporary clips")
+    shutil.rmtree(clips_dir)
 
 print()
 print("All done")

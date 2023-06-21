@@ -574,10 +574,9 @@ def add_info_clip():
             [fight_name, 70, 100],
             [f'Location: {fight_location}', 30, 100],
             ['Number of deaths: {event_count}', 30, 40],
-            ['Total time spent: {hours}h, {minutes}m', 30, 40]
             ]
     time_txt = 'Total time spent: '
-    if hours != 0:
+    if hours > 0:
         time_txt += '{hours}h, '
     time_txt += '{minutes}m'
 

@@ -576,6 +576,13 @@ def add_info_clip():
             ['Number of deaths: {event_count}', 30, 40],
             ['Total time spent: {hours}h, {minutes}m', 30, 40]
             ]
+    time_txt = 'Total time spent: '
+    if hours != 0:
+        time_txt += '{hours}h, '
+    time_txt += '{minutes}m'
+
+    text.append([time_txt, 30, 40])
+
     y = 0
     for i, arr in enumerate(text):
         y += arr[2]

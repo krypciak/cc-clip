@@ -61,7 +61,7 @@ last_before = args.last_before
 
 if not out_filepath.endswith(".mkv"):
     print("Output file has to end with .mkv")
-    exit()
+    exit(1)
 else:
     out_filename = os.path.basename(out_filepath)
     out_basename = out_filename[:-4]
@@ -87,7 +87,7 @@ elif search_type == "death":
     threshold = 0.95
 else:
     print("impossible")
-    exit()
+    exit(1)
 
 template_w, template_h = template.shape
 for x in range(len(template_cuts)):
@@ -201,7 +201,7 @@ def show_image(img, delay):
             if key & 0xFF == ord('n'):
                 break
             if key & 0xFF == ord('q'):
-                exit()
+                exit(1)
 
 
 async def check_frame(frame_number, frame):
@@ -333,7 +333,7 @@ def get_boss_health_data():
         else:
             if precentage >= 101:
                 print(f"Precentage higher than 101: {precentage}. Error reading bar hp") # noqa
-                exit()
+                exit(1)
 
             if precentage > 100:
                 precentage = 100
@@ -506,7 +506,7 @@ def combine_clips():
     clips_backup = clips.copy()
     if total_clips == 0:
         print(colored("Something went wrong, clips size is 0", 'red'))
-        exit()
+        exit(1)
 
     if grid_size < 2:
         print("Combining clips")

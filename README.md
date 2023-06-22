@@ -4,7 +4,8 @@ Python script that makes clips of deaths from recordings from the game CrossCode
 usage: cc-clip.py [-h] -t {ko,death} -o OUTPUT [-A AFTER] [-B BEFORE] [--grid GRID] [--threads THREADS]
                   [--intro-duration INTRO_DURATION] [--fight-name FIGHT_NAME]
                   [--fight-location FIGHT_LOCATION] [--progress-graph] [--last-count LAST_COUNT]
-                  [-lA LAST_AFTER] [-lB LAST_BEFORE] [--no-delete-clips] [--no-generate-clips] [--no-tile]
+                  [-lA LAST_AFTER] [-lB LAST_BEFORE] [-sef] [-ref] 
+                  [--no-delete-clips] [--no-generate-clips] [--no-tile]
                   files [files ...]
 ```
 <br>
@@ -22,7 +23,7 @@ Other arguments:
 - `--fight-name NAME` This name will be put in the intro<br>
 - `--fight-location LOCATION` This will be put in the intro<br>
 - `--progress-graph` Enable generation of a graph that represents boss % hp on deaths. Use only on boss fights<br>
-- `--last-count N` Make sure there are N clips at the end that aren't tiled<br>
+- `--last-count N` Make sure there are N clips at the end that aren't tiled (default: 0)<br>
 - `--last-after` Only applies to last clips specified by `--last-count`, specifies time like `--after`<br>
 - `--last-before` Only applies to last clips specified by `--last-count`, specifies time like `--before`<br>
 - `--threads N` Use N threads (default: 4)<br>

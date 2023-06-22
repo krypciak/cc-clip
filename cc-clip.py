@@ -27,7 +27,7 @@ parser.add_argument('--intro-duration',     type=float,           default=2,    
 parser.add_argument('--fight-name',         type=str,                                         help='Fight name to put in intro') # noqa
 parser.add_argument('--fight-location',     type=str,                                         help='Fight location to put in intro') # noqa
 parser.add_argument('--progress-graph',      action='store_true',  default=False,             help='Generate boss progress graph (bosses only)') # noqa
-parser.add_argument('--last-count',         type=int,             default=3,                  help='Number of clips at the end to apply custom -B and -A, and also keep from being tiled (default: 3)') # noqa
+parser.add_argument('--last-count',         type=int,             default=0,                  help='Number of clips at the end to apply custom -B and -A, and also keep from being tiled (default: 0)') # noqa
 parser.add_argument('-lA', '--last-after',  type=int,             default=600,                help='Clip time before event in ms, only applies to last clips (default: 400)') # noqa
 parser.add_argument('-lB', '--last-before', type=int,             default=4000,               help='Clip time after event in ms, only applies to last clips (default: 1500)') # noqa
 parser.add_argument('-sef', '--store-event-frames', action='store_true',  default=False,      help='Store event frames after video is processed') # noqa
@@ -497,7 +497,7 @@ def generate_video_of_frame(video, frame_number, index):
 
 
 def combine_clips():
-    global clips, total_clips
+    global clips, total_clips, grid_size
     clips = natsorted(clips) # noqa
     total_clips = len(clips)
     clips_backup = clips.copy()
@@ -513,22 +513,25 @@ def combine_clips():
         clips_per_screen = grid_size * grid_size
         tiled_clips = []
 
-        pbar_len = int(len(clips)/clips_per_screen)*clips_per_screen
+        pbar_len = len(clips) - last_clip_count
         if pbar_len == 0:
             pbar_len = len(clips)
             clips_per_screen = pbar_len
 
         pbar = tqdm(total=pbar_len, unit=' frames') # noqa
 
-        while len(clips) >= clips_per_screen:
+        while len(clips) >= last_clip_count:
             selected_clips = []
             for _ in range(clips_per_screen):
+                if len(clips) == 0:
+                    break
                 selected_clips.append(f"{clips_dir}/{clips.pop(0)}")
 
-            if len(clips) <= last_clip_count:
-                break
             if len(selected_clips) < 1:
                 break
+
+            optimal_grid_size = int(math.ceil(math.sqrt(len(selected_clips))))
+            grid_size = optimal_grid_size
 
             temp_file_out = f"{clips_dir}/grid/{len(tiled_clips)}_{out_filename}" # noqa
 
@@ -544,14 +547,14 @@ def combine_clips():
             for index, path_video in enumerate(selected_clips):
                 input_videos += f" -i {path_video}"
                 input_setpts += f"[{index}:v] setpts=PTS-STARTPTS, scale={video_width//grid_width}x{video_height//grid_height} [video{index}];" # noqa
-                if index > 0 and index < clips_per_screen - 1:
+                if index > 0 and index < len(selected_clips) - 1:
                     input_overlays += f"[tmp{index-1}][video{index}] overlay=shortest=1:x={video_width//grid_width * (index%grid_width)}:y={video_height//grid_height * (index//grid_height)} [tmp{index}];" # noqa
-                if index == clips_per_screen - 1:
+                if index == len(selected_clips) - 1:
                     input_overlays += f"[tmp{index-1}][video{index}] overlay=shortest=1:x={video_width//grid_width * (index%grid_width)}:y={video_height//grid_height * (index//grid_width)}" # noqa
                 audio_volume += f"[{index}:a]volume={grid_size}[a{index}];"
                 audio_merge += f"[a{index}]"
 
-            cmd = f"ffmpeg{input_videos} -filter_complex \"{input_setpts}{input_overlays},premultiply=inplace=1;{audio_volume}{audio_merge}amix=inputs={clips_per_screen}[audio_out]\" -map '[audio_out]' -fflags +genpts -loglevel error -y {temp_file_out}" # noqaa
+            cmd = f"ffmpeg{input_videos} -filter_complex \"{input_setpts}{input_overlays},premultiply=inplace=1;{audio_volume}{audio_merge}amix=inputs={len(selected_clips)}[audio_out]\" -map '[audio_out]' -fflags +genpts -loglevel error -y {temp_file_out}" # noqaa
 
             if do_tile:
                 os.system(cmd)
@@ -560,9 +563,6 @@ def combine_clips():
             tiled_clips.append(temp_file_out)
 
         pbar.close()
-
-        print("Combining tiled clips")
-        ffmpeg_combine(tiled_clips, f"{clips_dir}/grid/combine.mkv")
 
         if len(clips) < last_clip_count:
             clips = clips_backup[-last_clip_count:]
@@ -580,6 +580,9 @@ def combine_clips():
             pbar.close()
 
             print("Combining tiled clips with regular clips")
+            ffmpeg_combine(tiled_clips, out_filepath)
+        else:
+            print("Combining tiled clips")
             ffmpeg_combine(tiled_clips, out_filepath)
 
     print("Re-encoding the video")
@@ -701,7 +704,7 @@ def add_info_clip():
 
     print("Combining intro with clips")
     temp_file = f"{temp_dir}/{out_filename}"
-    shutil.copy(out_filename, temp_file)
+    shutil.copy(out_filepath, temp_file)
     cmd = f"ffmpeg -loop 1 -t {intro_duration} -i {intro_image} -i {temp_file} -f lavfi -t 0.1 -i anullsrc -filter_complex '[0][2][1:v][1:a]concat=n=2:v=1:a=1[v][a]' -map '[v]' -map '[a]' -fflags +genpts -loglevel error -y {out_filepath}" # noqa
     os.system(cmd)
 

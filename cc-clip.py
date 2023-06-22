@@ -159,15 +159,16 @@ def process_file(video):
             write_json = True
             tmp_json["frames"] = beg_frames
 
-    if restore_event_frames and progress_graph and video in event_frame_json and "boss-hp-data" in event_frame_json[video]: # noqa
-        phase_count = event_frame_json[video]["phases"]
-        graph_data = event_frame_json[video]["boss-hp-data"]
-    else:
-        get_boss_health_data()
-        if store_event_frames:
-            write_json = True
-            tmp_json["phases"] = phase_count
-            tmp_json["boss-hp-data"] = graph_data
+    if progress_graph:
+        if restore_event_frames and video in event_frame_json and "boss-hp-data" in event_frame_json[video]: # noqa
+            phase_count = event_frame_json[video]["phases"]
+            graph_data = event_frame_json[video]["boss-hp-data"]
+        else:
+            get_boss_health_data()
+            if store_event_frames:
+                write_json = True
+                tmp_json["phases"] = phase_count
+                tmp_json["boss-hp-data"] = graph_data
 
     if write_json:
         with open(event_frame_file, "w") as f:
@@ -276,7 +277,6 @@ def get_boss_health_data():
                         reverse_color([36, 0, 0])]
 
         set_boss_phases = not phase_count
-        print(f"set_boss_phases: {set_boss_phases}")
 
         start_x = 43
         end_x = 551

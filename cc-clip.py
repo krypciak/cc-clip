@@ -319,8 +319,8 @@ def get_boss_health_data():
             # exit(1)
 
         if precentage == -2:
-            print(colored(f"WARNING: Boss hp bar reading error at {frame_number}, skipping", 'yellow')) # noqa
-            beg_frames.remove(frame_number)
+            print(colored(f"WARNING: Boss hp bar reading error at {frame_number}", 'yellow')) # noqa
+            # beg_frames.remove(frame_number)
             continue
 
         if not precentage:

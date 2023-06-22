@@ -112,7 +112,7 @@ if not os.path.exists(temp_dir):
     os.makedirs(temp_dir)
 
 event_frame_file = f"{work_dir}/event-frames.json"
-if restore_event_frames:
+if restore_event_frames or store_event_frames:
     if os.path.exists(event_frame_file):
         with open(event_frame_file, "r") as f:
             event_frame_json = json.load(f)
@@ -171,6 +171,7 @@ def process_file(video):
                 tmp_json["boss-hp-data"] = graph_data
 
     if write_json:
+        event_frame_json[video] = tmp_json
         with open(event_frame_file, "w") as f:
             json.dump(event_frame_json, f)
 

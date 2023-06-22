@@ -162,7 +162,10 @@ def process_file(video):
     if progress_graph:
         if restore_event_frames and video in event_frame_json and "boss-hp-data" in event_frame_json[video]: # noqa
             phase_count = event_frame_json[video]["phases"]
-            graph_data = event_frame_json[video]["boss-hp-data"]
+            if phase_count == -1:
+                phase_count = None
+            else:
+                graph_data = event_frame_json[video]["boss-hp-data"]
         else:
             get_boss_health_data()
             if phase_count is None:

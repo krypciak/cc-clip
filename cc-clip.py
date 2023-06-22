@@ -165,8 +165,12 @@ def process_file(video):
             graph_data = event_frame_json[video]["boss-hp-data"]
         else:
             get_boss_health_data()
+            if phase_count is None:
+                phase_count = 2
+
             if store_event_frames:
                 write_json = True
+
                 tmp_json["phases"] = phase_count
                 tmp_json["boss-hp-data"] = graph_data
 
@@ -175,20 +179,6 @@ def process_file(video):
         with open(event_frame_file, "w") as f:
             json.dump(event_frame_json, f)
 
-    # for value in frames_with_matches:
-    #     if value > 20000 and value < 23000:
-    #         print(value, end=' ')
-    # print()
-
-    # cap.set(cv2.CAP_PROP_POS_FRAMES, 50000)
-    # ret, img = cap.read()
-    # show_image(img, 0)
-
-    # for frame in beg_frames:
-    #     cap.set(cv2.CAP_PROP_POS_FRAMES, frame)
-    #     ret, img = cap.read()
-    #     print(frame)
-    #     show_image(img, 0)
     generate_clips(video)
 
 
@@ -275,7 +265,8 @@ def get_boss_health_data():
                         reverse_color([95, 68, 70]),
                         reverse_color([255, 255, 255]),
                         reverse_color([0, 0, 0]),
-                        reverse_color([36, 0, 0])]
+                        reverse_color([36, 0, 0]),
+                        reverse_color([195, 95, 110])]
 
         set_boss_phases = not phase_count
 
@@ -301,7 +292,7 @@ def get_boss_health_data():
                 diff_phase = color_diff(ncolor, phase_color)
                 # print(f"phase diff: {diff_phase}")
                 if diff_phase < 20:
-                    x += 2
+                    x += 3
                     if set_boss_phases:
                         phase_count = round(total_bar_length / (x - start_x)) # noqa
                         set_boss_phases = False
@@ -321,7 +312,7 @@ def get_boss_health_data():
             # img[y-1, x] = (255, 0, 0)
             # img[y+1, x] = (255, 0, 0)
             # show_image(img, 0)
-            # exit()
+            # exit(1)
 
         if precentage == -2:
             print(colored(f"WARNING: Boss hp bar reading error at {frame_number}, skipping", 'yellow')) # noqa

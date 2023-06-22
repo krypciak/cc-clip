@@ -12,6 +12,7 @@ from PIL import ImageFont, ImageDraw, Image
 import math
 import matplotlib.pyplot as plt
 from termcolor import colored
+import json
 
 
 parser = argparse.ArgumentParser(description='Create clips of events using recordings from the hit game CrossCode') # noqa
@@ -25,10 +26,12 @@ parser.add_argument('--threads',            type=int,             default=4,    
 parser.add_argument('--intro-duration',     type=float,           default=2,                  help='Duration of the intro. 0 to disable (default: 2)') # noqa
 parser.add_argument('--fight-name',         type=str,                                         help='Fight name to put in intro') # noqa
 parser.add_argument('--fight-location',     type=str,                                         help='Fight location to put in intro') # noqa
-parser.add_argument('--progress-graph',      action='store_true',  default=False,              help='Generate boss progress graph (bosses only)') # noqa
+parser.add_argument('--progress-graph',      action='store_true',  default=False,             help='Generate boss progress graph (bosses only)') # noqa
 parser.add_argument('--last-count',         type=int,             default=3,                  help='Number of clips at the end to apply custom -B and -A, and also keep from being tiled (default: 3)') # noqa
 parser.add_argument('-lA', '--last-after',  type=int,             default=600,                help='Clip time before event in ms, only applies to last clips (default: 400)') # noqa
 parser.add_argument('-lB', '--last-before', type=int,             default=4000,               help='Clip time after event in ms, only applies to last clips (default: 1500)') # noqa
+parser.add_argument('-sef', '--store-event-frames', action='store_true',  default=False,      help='Store event frames after video is processed') # noqa
+parser.add_argument('-ref', '--restore-event-frames', action='store_true',  default=False,    help='Restore event frames from event-frames.json') # noqa
 parser.add_argument('--no-delete-clips',    action='store_false', default=True,               help='Dont delete the clips at the end') # noqa
 parser.add_argument('--no-generate-clips',  action='store_false', default=True,               help='Skip clip generation (use already existing ones)') # noqa
 parser.add_argument('--no-tile',            action='store_false', default=True,               help='Skip tile video generation (use already exisiting ones)') # noqa
@@ -44,6 +47,8 @@ gen_video_before = args.before
 gen_video_after = args.after
 do_tile = args.no_tile
 grid_size = args.grid
+store_event_frames = args.store_event_frames
+restore_event_frames = args.restore_event_frames
 intro_duration = args.intro_duration
 fight_location = args.fight_location
 fight_name = args.fight_name
@@ -106,6 +111,15 @@ temp_dir = f"{work_dir}/tmp"
 if not os.path.exists(temp_dir):
     os.makedirs(temp_dir)
 
+event_frame_file = f"{work_dir}/event-frames.json"
+if restore_event_frames:
+    if os.path.exists(event_frame_file):
+        with open(event_frame_file, "r") as f:
+            event_frame_json = json.load(f)
+    else:
+        event_frame_json = {}
+else:
+    event_frame_json = {}
 
 max_frame_jump = 100
 
@@ -134,11 +148,28 @@ def process_file(video):
 
     phase_count = None
 
-    search_for_frames()
-    beg_frames = get_unique_moments(frames_with_matches)
+    if restore_event_frames and video in event_frame_json:
+        beg_frames = event_frame_json[video]["frames"]
+        if progress_graph:
+            phase_count = event_frame_json[video]["phases"]
+            graph_data = event_frame_json[video]["boss-hp-data"]
 
-    if progress_graph:
-        get_boss_health_data()
+    else:
+        search_for_frames()
+        beg_frames = get_unique_moments(frames_with_matches)
+
+        if store_event_frames:
+            tmp_json = {"frames": beg_frames}
+
+            if progress_graph:
+                get_boss_health_data()
+                tmp_json["phases"] = phase_count
+                tmp_json["boss-hp-data"] = graph_data
+
+            event_frame_json[video] = tmp_json
+
+        with open(event_frame_file, "w") as f:
+            json.dump(event_frame_json, f)
 
     # for value in frames_with_matches:
     #     if value > 20000 and value < 23000:

@@ -25,7 +25,9 @@ Other arguments:
 - `--last-count N` Make sure there are N clips at the end that aren't tiled<br>
 - `--last-after` Only applies to last clips specified by `--last-count`, specifies time like `--after`<br>
 - `--last-before` Only applies to last clips specified by `--last-count`, specifies time like `--before`<br>
-- `--threads N`use N threads (default: 4)<br>
+- `--threads N` Use N threads (default: 4)<br>
+- `-store-event-frames` Store event frames after video is processed
+- `--restore-event-frames` Restore event frames from event-frames.json, skips a lot of processing time when processing the same file more than once
 
 Debug options:<br>
 - `--no-delete-clips` Don't delete temporary files after completion<br>
@@ -37,5 +39,6 @@ Example usage:
 python cc-clip.py --type death --threads 16 -B 1000 -A 700 -o clip.mkv --grid 4 \
     --intro-duration 6 "Master Magmoth" --fight-location "Faj'ro dungeon" --progress-graph \
     --last-count 5 -lB 4000 -lA 600 \
+    --store-event-frames --restore-event-frames \
     ~/Videos/2023-05-10_15-31-44.mkv ~/Videos/2023-05-10_16-25-09.mkv
 ```

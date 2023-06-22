@@ -127,6 +127,7 @@ total_videos_length = 0
 total_clips = 0
 clips = []
 
+phase_count = None
 graph_data = [[], []]
 graph_frame_offset = 0
 
@@ -146,28 +147,29 @@ def process_file(video):
     start_frame = 0
     end_frame = -1
 
-    phase_count = None
+    tmp_json = {"frames": [], "phases": -1, "boss-hp-data": []}
+    write_json = False
 
-    if restore_event_frames and video in event_frame_json:
+    if restore_event_frames and video in event_frame_json and "frames" in event_frame_json[video]: # noqa
         beg_frames = event_frame_json[video]["frames"]
-        if progress_graph:
-            phase_count = event_frame_json[video]["phases"]
-            graph_data = event_frame_json[video]["boss-hp-data"]
-
     else:
         search_for_frames()
         beg_frames = get_unique_moments(frames_with_matches)
-
         if store_event_frames:
-            tmp_json = {"frames": beg_frames}
+            write_json = True
+            tmp_json["frames"] = beg_frames
 
-            if progress_graph:
-                get_boss_health_data()
-                tmp_json["phases"] = phase_count
-                tmp_json["boss-hp-data"] = graph_data
+    if restore_event_frames and progress_graph and video in event_frame_json and "boss-hp-data" in event_frame_json[video]: # noqa
+        phase_count = event_frame_json[video]["phases"]
+        graph_data = event_frame_json[video]["boss-hp-data"]
+    else:
+        get_boss_health_data()
+        if store_event_frames:
+            write_json = True
+            tmp_json["phases"] = phase_count
+            tmp_json["boss-hp-data"] = graph_data
 
-            event_frame_json[video] = tmp_json
-
+    if write_json:
         with open(event_frame_file, "w") as f:
             json.dump(event_frame_json, f)
 
@@ -274,12 +276,13 @@ def get_boss_health_data():
                         reverse_color([36, 0, 0])]
 
         set_boss_phases = not phase_count
+        print(f"set_boss_phases: {set_boss_phases}")
 
-        start_x = 42
+        start_x = 43
         end_x = 551
         x = start_x - 1
         y = 309
-        total_bar_length = end_x - start_x
+        total_bar_length = end_x - start_x + 1
 
         while x < end_x + 1:
             x += 1
@@ -306,7 +309,7 @@ def get_boss_health_data():
             diff_empty = smaller_color_diff(ccolor, empty_colors)
             # print(f"empty diff: {diff_empty}")
 
-            if diff_empty < 30:
+            if diff_empty < 30 or x > end_x - 3:
                 precentage = (x - start_x) / total_bar_length * 100
                 break
 
@@ -520,7 +523,7 @@ def combine_clips():
 
         pbar = tqdm(total=pbar_len, unit=' frames') # noqa
 
-        while len(clips) >= last_clip_count:
+        while len(clips) >= last_clip_count or len(clips) <= 1:
             selected_clips = []
             for _ in range(clips_per_screen):
                 if len(clips) == 0:

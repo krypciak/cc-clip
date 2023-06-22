@@ -524,7 +524,7 @@ def combine_clips():
 
         pbar = tqdm(total=pbar_len, unit=' frames') # noqa
 
-        while len(clips) >= last_clip_count or len(clips) <= 1:
+        while len(clips) >= last_clip_count and len(clips) > 1:
             selected_clips = []
             for _ in range(clips_per_screen):
                 if len(clips) == 0:

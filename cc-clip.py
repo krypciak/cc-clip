@@ -650,8 +650,8 @@ def add_info_clip():
 
         ax.plot(x_data, y_data, color='#1f77b4')
 
-        ticks = [int(100/phase_count*i) for i in range(1, phase_count)]
-        tick_labels = [f"{ticks[i]}%" for i in range(phase_count-1)]
+        ticks = [int(100/phase_count*i) for i in range(1, phase_count+1)]
+        tick_labels = [f"{ticks[i]}%" for i in range(phase_count)]
         plt.yticks(ticks, tick_labels)
         ax.set_ylim(0, 110)
 

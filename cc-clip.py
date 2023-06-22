@@ -269,7 +269,8 @@ def get_boss_health_data():
                         reverse_color([255, 255, 255]),
                         reverse_color([0, 0, 0]),
                         reverse_color([36, 0, 0]),
-                        reverse_color([195, 95, 110])]
+                        reverse_color([195, 95, 110]),
+                        reverse_color([139, 63, 75])]
 
         set_boss_phases = not phase_count
 
@@ -595,7 +596,7 @@ def add_info_clip():
     minutes, seconds = divmod(total_videos_length, 60)
     hours, minutes = divmod(minutes, 60)
     hours = int(hours)
-    minutes = int(minutes)
+    minutes = math.ceil(minutes)
     seconds = int(seconds)
 
     font_path = "DejaVuSans.ttf"

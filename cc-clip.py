@@ -132,9 +132,15 @@ graph_data = [[], []]
 graph_frame_offset = 0
 
 
-def process_file(video):
-    print(f"Processing file {video}")
-    global cap, video_frame_count, video_fps, video_width, video_height, start_frame, end_frame, total_videos_length, graph_data, phase_count, beg_frames # noqa
+def process_file(video1):
+    global cap, video_frame_count, video_fps
+    global video_width, video_height, start_frame
+    global end_frame, total_videos_length, graph_data
+    global phase_count, beg_frames, video_basename, video
+    video = video1
+    video_basename = os.path.basename(video)[:-4]
+
+    print("Processing file: " + colored(video, 'blue'))
     # Load the video file
     cap = cv2.VideoCapture(video)
     video_frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
@@ -182,7 +188,7 @@ def process_file(video):
         with open(event_frame_file, "w") as f:
             json.dump(event_frame_json, f)
 
-    generate_clips(video)
+    generate_clips()
 
 
 def show_image(img, delay):
@@ -432,27 +438,39 @@ def ffmpeg_combine(arr, filename, copy=True):
     os.remove(list_file_path)
 
 
-def generate_clips(video):
-    print("Generating clips")
-
-    global pbar
-    pbar = tqdm(total=len(beg_frames), unit='clip')
-    with concurrent.futures.ThreadPoolExecutor(max_workers=thread_count) as executor: # noqa
-        futures = [executor.submit(generate_video_of_frame, video, frame_number, i) for i, frame_number in enumerate(beg_frames)] # noqa
-
-        concurrent.futures.wait(futures)
-        pbar.close()
-
-    print("\n")
-
-
-def generate_video_of_frame(video, frame_number, index):
-    filename = f"{file_index}_{frame_number}.mkv"
+def generate_clips():
+    if len(beg_frames) <= 0:
+        return
 
     if do_generate_clips:
-        video_file = f"{temp_dir}/video-{filename}"
-        audio_file = f"{temp_dir}/audio-{filename}"
+        print("Generating clips")
+        global pbar
+        pbar = tqdm(total=len(beg_frames), unit='clip')
 
+    with concurrent.futures.ThreadPoolExecutor(max_workers=thread_count) as executor: # noqa
+        futures = [executor.submit(generate_video_of_frame, frame_number, i) for i, frame_number in enumerate(beg_frames)] # noqa
+
+        concurrent.futures.wait(futures)
+        if do_generate_clips:
+            pbar.close()
+            print()
+
+
+def generate_video_of_frame(frame_number, index):
+    filename = f"{frame_number}.mkv"
+
+    temp_video_dir = f"{temp_dir}/{video_basename}"
+    if not os.path.exists(temp_video_dir):
+        os.makedirs(temp_video_dir)
+    video_file = f"{temp_video_dir}/video-{filename}"
+    audio_file = f"{temp_video_dir}/audio-{filename}"
+
+    clips_video_dir = f"{clips_dir}/{video_basename}"
+    if not os.path.exists(clips_video_dir):
+        os.makedirs(clips_video_dir)
+    clip_file = f"{clips_video_dir}/{filename}"
+
+    if do_generate_clips:
         is_last_enougth = len(beg_frames)-last_clip_count > index
         time_before = (gen_video_before if is_last_enougth else last_before)
         time_after = (gen_video_after if is_last_enougth else last_after)
@@ -481,7 +499,7 @@ def generate_video_of_frame(video, frame_number, index):
         os.system(cmd)
 
         # Combine video and audio
-        cmd = f"ffmpeg -i {video_file} -i {audio_file} -c:v copy -map 0:v:0 -map 1:a:0 -loglevel error -y {clips_dir}/{filename}" # noqa
+        cmd = f"ffmpeg -i {video_file} -i {audio_file} -c:v copy -map 0:v:0 -map 1:a:0 -loglevel error -y {clip_file}" # noqa
         os.system(cmd)
 
         # Clean up
@@ -489,7 +507,7 @@ def generate_video_of_frame(video, frame_number, index):
         os.remove(audio_file)
 
     with frame_lock:
-        clips.append(filename)
+        clips.append(clip_file)
         pbar.update()
 
     pass
@@ -500,14 +518,15 @@ def combine_clips():
     clips = natsorted(clips) # noqa
     total_clips = len(clips)
     clips_backup = clips.copy()
+
     if total_clips == 0:
-        print(colored("Something went wrong, clips size is 0", 'red'))
+        print(colored("Something went wrong, clips size is 0. No deaths in clip?", 'red')) # noqa
         exit(1)
 
     if grid_size < 2:
         print("Combining clips")
-        ffmpeg_combine([f"{clips_dir}/{f}" for f in clips], f"{out_filepath}", copy=True) # noqa
-    else:
+        ffmpeg_combine(clips, f"{out_filepath}", copy=True)
+    elif len(clips) > 1:
         print("Tiling clips")
         clips_per_screen = grid_size * grid_size
         tiled_clips = []
@@ -524,7 +543,7 @@ def combine_clips():
             for _ in range(clips_per_screen):
                 if len(clips) == 0:
                     break
-                selected_clips.append(f"{clips_dir}/{clips.pop(0)}")
+                selected_clips.append(clips.pop(0))
 
             if len(selected_clips) < 1:
                 break
@@ -557,7 +576,8 @@ def combine_clips():
 
             if do_tile:
                 os.system(cmd)
-            pbar.update(clips_per_screen)
+
+            pbar.update(len(selected_clips))
 
             tiled_clips.append(temp_file_out)
 
@@ -570,8 +590,8 @@ def combine_clips():
             print("Re-coding regular clips to .mkv")
             pbar = tqdm(total=len(clips), unit=' frames')
             for f in clips:
-                new_file = f"{clips_dir}/grid/{f}.mkv"
-                cmd = f"ffmpeg -i {clips_dir}/{f} -loglevel error -y {new_file}" # noqa
+                new_file = f"{clips_dir}/grid/{os.path.basename(f)}"
+                cmd = f"ffmpeg -i {f} -loglevel error -y {new_file}" # noqa
                 os.system(cmd)
                 tiled_clips.append(new_file)
                 pbar.update()
@@ -732,5 +752,5 @@ if cleanup_clips:
     shutil.rmtree(clips_dir)
 
 print()
-print("All done")
-print(f"Output file: {out_filepath}")
+print("Output file: " + colored(out_filepath, 'blue'))
+print(colored("All done.", 'green'))

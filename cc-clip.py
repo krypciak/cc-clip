@@ -128,15 +128,17 @@ total_clips = 0
 clips = []
 
 phase_count = None
-graph_data = [[], []]
+global_graph_data = []
 graph_frame_offset = 0
 
 
 def process_file(video1):
     global cap, video_frame_count, video_fps
     global video_width, video_height, start_frame
-    global end_frame, total_videos_length, graph_data
-    global phase_count, beg_frames, video_basename, video
+    global end_frame, total_videos_length
+    global global_graph_data, graph_data, phase_count
+    global beg_frames, video_basename, video
+    global graph_frame_offset
     video = video1
     video_basename = os.path.basename(video)[:-4]
 
@@ -150,14 +152,18 @@ def process_file(video1):
 
     total_videos_length = total_videos_length + video_frame_count / video_fps
 
+    graph_data = []
+
     start_frame = 0
     end_frame = -1
 
-    tmp_json = {"frames": [], "phases": -1, "boss-hp-data": []}
+    tmp_json = {"frames": []}
     write_json = False
 
     if restore_event_frames and video in event_frame_json and "frames" in event_frame_json[video]: # noqa
         beg_frames = event_frame_json[video]["frames"]
+        if store_event_frames:
+            tmp_json["frames"] = beg_frames
     else:
         search_for_frames()
         beg_frames = get_unique_moments(frames_with_matches)
@@ -166,12 +172,9 @@ def process_file(video1):
             tmp_json["frames"] = beg_frames
 
     if progress_graph:
-        if restore_event_frames and video in event_frame_json and "boss-hp-data" in event_frame_json[video]: # noqa
+        if restore_event_frames and video in event_frame_json and "phases" in event_frame_json[video] and event_frame_json[video]["phases"] != -1: # noqa
             phase_count = event_frame_json[video]["phases"]
-            if phase_count == -1:
-                phase_count = None
-            else:
-                graph_data = event_frame_json[video]["boss-hp-data"]
+            graph_data = event_frame_json[video]["boss-hp-data"]
         else:
             get_boss_health_data()
             if phase_count is None:
@@ -186,9 +189,15 @@ def process_file(video1):
     if write_json:
         event_frame_json[video] = tmp_json
         with open(event_frame_file, "w") as f:
-            json.dump(event_frame_json, f)
+            json.dump(event_frame_json, f, indent=4)
 
     generate_clips()
+
+    if progress_graph:
+        for arr in graph_data:
+            global_graph_data.append([(arr[0]+graph_frame_offset)/video_fps, arr[1]]) # noqa
+
+        graph_frame_offset += video_frame_count
 
 
 def show_image(img, delay):
@@ -253,7 +262,7 @@ def smaller_color_diff(color1, arr):
 
 
 def get_boss_health_data():
-    global graph_frame_offset, phase_count, beg_frames
+    global phase_count, beg_frames
     print("Getting boss health data")
     for frame_number in tqdm(beg_frames, unit=' frames'):
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
@@ -268,7 +277,14 @@ def get_boss_health_data():
         # exit()
 
         hp_color = reverse_color([255, 122, 122])
-        phase_color = reverse_color([0, 0, 0])
+
+        prephase_colors = [
+                reverse_color([255, 255, 255])
+                ]
+        phase_colors = [
+                reverse_color([0, 0, 0]),
+                reverse_color([76, 76, 76])
+                ]
 
         empty_colors = [reverse_color([76, 76, 76]),
                         reverse_color([95, 68, 70]),
@@ -294,14 +310,16 @@ def get_boss_health_data():
             # print(ccolor)
             hp_diff = color_diff(ccolor, hp_color)
             # print(f"hp diff: {hp_diff}")
-            if hp_diff < 55:
+            if hp_diff < 60:
                 # img[y, x] = (0, 255, 255)
                 continue
 
             if x < end_x - 3:
-                diff_phase = color_diff(ncolor, phase_color)
+                diff_prephase = smaller_color_diff(ccolor, prephase_colors)
+                diff_phase = smaller_color_diff(ncolor, phase_colors)
+                # print(f"prephase diff: {diff_prephase}")
                 # print(f"phase diff: {diff_phase}")
-                if diff_phase < 20:
+                if diff_prephase < 100 and diff_phase < 100:
                     x += 3
                     if set_boss_phases:
                         phase_count = round(total_bar_length / (x - start_x)) # noqa
@@ -311,7 +329,7 @@ def get_boss_health_data():
             diff_empty = smaller_color_diff(ccolor, empty_colors)
             # print(f"empty diff: {diff_empty}")
 
-            if diff_empty < 30 or x > end_x - 3:
+            if diff_empty < 50 or x > end_x - 3:
                 precentage = (x - start_x) / total_bar_length * 100
                 break
 
@@ -324,14 +342,11 @@ def get_boss_health_data():
             # show_image(img, 0)
             # exit(1)
 
-        if precentage == -2:
+        if not precentage or precentage == -2:
             print(colored(f"WARNING: Boss hp bar reading error at {frame_number}", 'yellow')) # noqa
             # beg_frames.remove(frame_number)
+            # show_image(img, 0)
             continue
-
-        if not precentage:
-            print("Boss hp bar not detected. Not a bossfight? Consider disabling --progress-graph") # noqa
-            show_image(img, 0)
         else:
             if precentage >= 101:
                 print(f"Precentage higher than 101: {precentage}. Error reading bar hp") # noqa
@@ -339,16 +354,16 @@ def get_boss_health_data():
 
             if precentage > 100:
                 precentage = 100
+
+            precentage = round(precentage, 2)
             with graph_data_lock:
                 # cv2.putText(img, str(round(precentage, 3)), (300, 300), cv2.FONT_HERSHEY_SIMPLEX, 3, (255, 0, 0), 3) # noqa
                 # print(frame_number)
                 # print(f"x: {x}")
+                # print(phase_count)
                 # show_image(img, 0)
 
-                graph_data[0].append(frame_number + graph_frame_offset)
-                graph_data[1].append(precentage)
-
-    graph_frame_offset += video_frame_count
+                graph_data.append([frame_number, precentage]) # noqa
 
 
 def add_frame_to_array(frame_number):
@@ -647,17 +662,18 @@ def add_info_clip():
         text_size = draw.textbbox((0, 0), txt, font)
 
         x = (video_width - text_size[2]) / 2
-        # y = (img.height - text_size[3]) / 2
 
         draw.text((x, y), txt, font=font, fill=fontColor)
 
     if progress_graph:
         assert phase_count is not None
-        x_data = [frame_number/video_fps for frame_number in graph_data[0]]
-        y_data = graph_data[1]
+        x_data = [arr[0] for arr in global_graph_data]
+        y_data = [arr[1] for arr in global_graph_data]
+
         death_count = len(x_data)
 
-        fig, ax = plt.subplots(figsize=(max(8, min(video_width - 20 * 2, total_videos_length/60/10)), 6)) # noqa
+        figsize = min(17, max(8, total_videos_length/60/10))
+        fig, ax = plt.subplots(figsize=(figsize, 6)) # noqa
 
         # Add labels and title
         plt.xlabel('time (hh:mm)', color='black')
@@ -704,7 +720,7 @@ def add_info_clip():
         plot_data = np.frombuffer(canvas.tostring_rgb(), dtype=np.uint8).reshape((graph_height, graph_width, 3)) # noqa
         plot_data_copy = np.copy(plot_data)
 
-        # fix colors being wrong for some reason
+        # bgr -> rgb becouse opencv uses bgr for some reason
         for x1 in range(len(plot_data)):
             for y1 in range(len(plot_data[x1])):
                 r, g, b = plot_data[x1][y1]
@@ -716,7 +732,7 @@ def add_info_clip():
         y += 100
         img.paste(graph_img, (x, y))
 
-    # show_image(np.array(img), 0)
+    show_image(np.array(img), 0)
 
     intro_image = f"{temp_dir}/{out_basename}.png"
     img.save(intro_image)
@@ -738,10 +754,10 @@ for f in files:
     file_index = file_index + 1
 
 
-if intro_duration > 0:
-    combine_clips()
+combine_clips()
 
-add_info_clip()
+if intro_duration > 0:
+    add_info_clip()
 
 
 # Release the video capture object

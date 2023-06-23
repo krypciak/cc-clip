@@ -732,7 +732,7 @@ def add_info_clip():
         y += 100
         img.paste(graph_img, (x, y))
 
-    show_image(np.array(img), 0)
+    # show_image(np.array(img), 0)
 
     intro_image = f"{temp_dir}/{out_basename}.png"
     img.save(intro_image)

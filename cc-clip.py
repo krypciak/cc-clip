@@ -7,7 +7,6 @@ from tqdm import tqdm
 import os
 import argparse
 import shutil
-from natsort import natsorted
 from PIL import ImageFont, ImageDraw, Image
 import math
 import matplotlib.pyplot as plt
@@ -530,7 +529,6 @@ def generate_video_of_frame(frame_number, index):
 
 def combine_clips():
     global clips, total_clips, grid_size
-    clips = natsorted(clips) # noqa
     total_clips = len(clips)
     clips_backup = clips.copy()
 

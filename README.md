@@ -38,7 +38,7 @@ Debug options:<br>
 Example usage:
 ```
 python cc-clip.py --type death --threads 16 -B 1000 -A 700 -o clip.mkv --grid 4 \
-    --intro-duration 6 "Master Magmoth" --fight-location "Faj'ro dungeon" --progress-graph \
+    --intro-duration 6 --fight-name "Master Magmoth" --fight-location "Faj'ro dungeon" --progress-graph \
     --last-count 5 -lB 4000 -lA 600 \
     --store-event-frames --restore-event-frames \
     ~/Videos/2023-05-10_15-31-44.mkv ~/Videos/2023-05-10_16-25-09.mkv

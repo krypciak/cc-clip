@@ -536,7 +536,7 @@ def combine_clips():
         print(colored("Something went wrong, clips size is 0. No deaths in clip?", 'red')) # noqa
         exit(1)
 
-    if grid_size < 2:
+    if grid_size < 2 or len(clips) == 1:
         print("Combining clips")
         ffmpeg_combine(clips, f"{out_filepath}", copy=True)
     elif len(clips) > 1:

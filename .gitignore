@@ -1,5 +1,6 @@
 tmp
 clips
-event-frames.json
+event-frames.json*
 *.mkv
 *.mp4
+*.sh

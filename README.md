@@ -1,4 +1,5 @@
-Python script that makes clips of deaths from recordings from the game CrossCode
+Python script that makes clips of deaths from recordings from the game CrossCode   
+For example clips, see https://youtube.com/watch?v=cQtt2NfSNok
 
 ```
 usage: cc-clip.py [-h] -t {ko,death} -o OUTPUT [-A AFTER] [-B BEFORE] [--grid GRID] [--threads THREADS]
